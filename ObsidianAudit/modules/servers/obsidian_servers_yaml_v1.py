@@ -96,5 +96,3 @@ def main():
 
         print("Generado:", name)
 
-if __name__ == "__main__":
-    main()

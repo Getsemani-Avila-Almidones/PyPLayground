@@ -1,22 +1,7 @@
-"""
-Obsidian Vault Auditor - v1 (Aplicativos → YAML sugerido)
-Autor: ChatGPT (para Getsemani)
-Descripción:
-- Lee una carpeta de "Aplicativos" en un vault de Obsidian.
-- Para cada nota .md sin frontmatter, genera un YAML sugerido basado en un template.
-- Intenta autollenar campos buscando patrones tipo "Área: Finanzas", "Responsable: Juan", etc.
-- NO modifica las notas por defecto: crea archivos .yml en una carpeta _yaml_sugerido.
-Cómo usar:
-1) Configura VAULT_PATH y APPS_FOLDER_REL.
-2) Ajusta TEMPLATE y FIELD_PATTERNS a tu "ficha técnica general".
-3) Ejecuta: python obsidian_apps_yaml_v1.py
-"""
-
 import os
 import re
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, List
-
 
 # =========================
 # CONFIGURACIÓN PRINCIPAL
@@ -262,7 +247,3 @@ def main():
 
     print("\n✅ Listo. (Si quieres que inserte el YAML dentro de cada nota .md, lo hacemos en v1.1)")
     print("=========== FIN ===========\n")
-
-
-if __name__ == "__main__":
-    main()
