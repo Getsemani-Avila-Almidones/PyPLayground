@@ -21,7 +21,7 @@ from typing import Dict, Optional, Tuple, List
 # =========================
 # CONFIGURACIÓN PRINCIPAL
 # =========================
-VAULT_PATH = r"C:\RUTA\A\TU\VAULT"  # <-- CAMBIA ESTO
+VAULT_PATH = r"C:\Users\21596\Documents\Obsidian\AlmexVault"  # <-- CAMBIA ESTO
 APPS_FOLDER_REL = r"Application\Fichas Tecnicas Aplicaciones"  # carpeta relativa dentro del vault
 
 OUTPUT_FOLDER_REL = r"_yaml_sugerido\apps"  # se creará dentro del vault
@@ -235,8 +235,8 @@ def main():
     # ===== REPORTE =====
     print("\n=========== OBSIDIAN APPS → YAML (v1) ===========")
     print(f"Vault: {VAULT_PATH}")
-    print(f"Carpeta Apps: {APPS_FOLDER_REL}")
-    print(f"Salida: {OUTPUT_FOLDER_REL}")
+    print(f"Carpeta Apps: {VAULT_PATH}\\{APPS_FOLDER_REL}")
+    print(f"Salida: {VAULT_PATH}\\{OUTPUT_FOLDER_REL}")
     print(f"Total notas .md encontradas: {total}")
     print(f"Notas con frontmatter (saltadas): {skipped_has_frontmatter}")
     print(f"Notas sin frontmatter (procesadas): {len(results)}")
