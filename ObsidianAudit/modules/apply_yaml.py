@@ -19,6 +19,23 @@ TYPE_MAP = {
     "incident": "incident",
 }
 
+# Carpetas donde la migración queda ACTIVADA actualmente.
+ACTIVE_MODULE_FOLDERS = {
+    os.path.normpath("Application/Fichas Tecnicas Aplicaciones"),
+    os.path.normpath("Infraestructura/Fichas Tecnicas Infraestructura"),
+}
+
+# Carpetas reservadas para futuros módulos. Se dejan explícitas para
+# facilitar su activación posterior sin tocar la lógica principal.
+FUTURE_MODULE_FOLDERS = {
+    os.path.normpath("Listas de distribución OTBI"),
+    os.path.normpath("Incidentes/INFORMES"),
+    os.path.normpath("OIC_APEX"),
+    os.path.normpath("Politicas"),
+    os.path.normpath("Procesos"),
+    os.path.normpath("Procesos/Ficha Tecnicas Procesos"),
+}
+
 
 @dataclass(frozen=True)
 class FrontmatterDocument:
@@ -223,17 +240,39 @@ class VaultScanner:
     """Responsable de descubrir archivos markdown del vault."""
 
     @staticmethod
-    def iter_markdown_files(vault_path: str) -> Iterable[str]:
+    def iter_markdown_files(vault_path: str, include_folders: Iterable[str]) -> Iterable[str]:
+        include_set = {os.path.normpath(path) for path in include_folders}
+
         for root, _, files in os.walk(vault_path):
+            relative_root = os.path.normpath(os.path.relpath(root, vault_path))
+            if relative_root == ".":
+                continue
+
+            if not VaultScanner._is_inside_included_folder(relative_root, include_set):
+                continue
+
             for file_name in files:
                 if file_name.lower().endswith(".md"):
                     yield os.path.join(root, file_name)
+
+    @staticmethod
+    def _is_inside_included_folder(relative_root: str, include_folders: Iterable[str]) -> bool:
+        for folder in include_folders:
+            if relative_root == folder or relative_root.startswith(f"{folder}{os.sep}"):
+                return True
+        return False
 
 
 def execute_apply() -> None:
     print("\n====================================")
     print("MIGRACION YAML FRONTMATTER")
     print("====================================")
+    print("Módulos activos:")
+    for folder in sorted(ACTIVE_MODULE_FOLDERS):
+        print(f" - {folder}")
+    print("Módulos preparados para futuro (sin ejecutar):")
+    for folder in sorted(FUTURE_MODULE_FOLDERS):
+        print(f" - {folder}")
 
     migrator = MarkdownYamlMigrator(
         parser=FrontmatterParser(),
@@ -244,7 +283,7 @@ def execute_apply() -> None:
     updated = 0
     errors = []
 
-    for file_path in VaultScanner.iter_markdown_files(VAULT_PATH):
+    for file_path in VaultScanner.iter_markdown_files(VAULT_PATH, ACTIVE_MODULE_FOLDERS):
         try:
             if migrator.migrate_file(file_path):
                 updated += 1
