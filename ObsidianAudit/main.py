@@ -1,7 +1,10 @@
-##from modules.apps.apps import execute as run_apps
-##from modules.servers.servers import execute as run_servers
+import sys
 from modules.general_analysis import analyze_vault
-from config import VAULT_PATH, OUTPUT_DATA
+from modules.apps.apps_smart import execute as run_apps
+from modules.servers.servers_smart import execute as run_servers
+from modules.dashboard import execute_dashboard
+from modules.apply_yaml import execute_apply
+
 
 def banner():
     print("\n====================================")
@@ -16,10 +19,18 @@ def main():
     analyze_vault()
 
     # Ejecutar Apps
-    #run_apps()
+    run_apps()
 
     # Ejecutar Servidores
-    #run_servers()
+    run_servers()
+
+    # Aplicar YAML solo si se solicita
+    execute_apply()
+    # if "--apply" in sys.argv:
+    #     execute_apply()
+
+    # Dashboard final
+    execute_dashboard()
 
     print("\n====================================")
     print("ANALISIS COMPLETADO")
