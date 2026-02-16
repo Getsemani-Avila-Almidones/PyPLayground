@@ -1,133 +1,199 @@
 import os
-import yaml
+import re
 import shutil
-from config import OUTPUT_APPS, OUTPUT_SERVERS, VAULT_PATH
+import unicodedata
+from typing import Any, Dict, Optional, Tuple
+
+import yaml
+
+from config import VAULT_PATH
+
+TYPE_MAP = {
+    "aplicacion": "service",
+    "servicio": "service",
+    "server": "server",
+    "servidor": "server",
+    "incidente": "incident",
+    "incident": "incident",
+}
 
 
-def load_yaml_folder(folder):
-    data = {}
-
-    if not os.path.exists(folder):
-        print("Carpeta no encontrada:", folder)
-        return data
-
-    for file in os.listdir(folder):
-        if file.endswith(".yml"):
-            path = os.path.join(folder, file)
-
-            with open(path, encoding="utf-8") as f:
-                try:
-                    y = yaml.safe_load(f)
-                    if y and "nombre" in y:
-                        name = y["nombre"].strip()
-                        data[name] = y
-                        print("YAML cargado:", name)
-                except Exception as e:
-                    print("Error leyendo YAML:", file, e)
-
-    print("Total YAML cargados:", len(data))
-    return data
+def slugify(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
+    lowered = ascii_only.lower()
+    slug = re.sub(r"[^a-z0-9]+", "_", lowered).strip("_")
+    return slug or "item"
 
 
-# 🔴 BÚSQUEDA INTELIGENTE DE NOTAS
-def normalize(text):
-    return text.lower().replace(" ", "").replace("_", "").replace("-", "")
+def detect_eol(text: str) -> str:
+    if "\r\n" in text:
+        return "\r\n"
+    return "\n"
 
 
-def find_note_path(note_name):
+def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """
+    Parse frontmatter only when it starts at byte 0 and closes with a dedicated marker line.
+    Returns (yaml_dict_or_none, body_exact_text).
+    """
+    if not (content.startswith("---\n") or content.startswith("---\r\n")):
+        return None, content
 
-    target = normalize(note_name)
+    first_eol = "\r\n" if content.startswith("---\r\n") else "\n"
+    start = len(f"---{first_eol}")
+    closing_marker = f"{first_eol}---{first_eol}"
+    closing_idx = content.find(closing_marker, start)
 
-    for root, dirs, files in os.walk(VAULT_PATH):
-        for f in files:
-            if not f.endswith(".md"):
-                continue
+    if closing_idx == -1:
+        return None, content
 
-            filename = f[:-3]  # quitar .md
+    yaml_block = content[start:closing_idx]
+    body_start = closing_idx + len(closing_marker)
+    body = content[body_start:]
 
-            if normalize(filename) == target:
-                path = os.path.join(root, f)
-                print("Nota encontrada:", note_name, "->", path)
-                return path
+    try:
+        parsed = yaml.safe_load(yaml_block)
+    except yaml.YAMLError:
+        parsed = None
 
-    print("❌ No encontrada:", note_name)
-    return None
+    if parsed is None:
+        parsed = {}
 
+    if not isinstance(parsed, dict):
+        parsed = {"_legacy_frontmatter": parsed}
 
-def split_frontmatter(content):
-
-    if content.startswith("---"):
-        parts = content.split("---", 2)
-        if len(parts) >= 3:
-            return parts[1], parts[2]
-
-    return None, content
+    return parsed, body
 
 
-def apply_yaml_to_note(note_path, yaml_data):
+def infer_entity_type(frontmatter: Dict[str, Any], file_path: str) -> str:
+    raw_tipo = str(frontmatter.get("tipo", "")).strip().lower()
+    if raw_tipo in TYPE_MAP:
+        return TYPE_MAP[raw_tipo]
 
-    with open(note_path, "r", encoding="utf-8", errors="ignore") as f:
-        content = f.read()
+    lowered_path = file_path.lower()
+    if "incidente" in lowered_path:
+        return "incident"
+    if "server" in lowered_path or "servidor" in lowered_path:
+        return "server"
+    return "service"
 
-    # backup
-    backup = note_path + ".bak"
-    shutil.copy2(note_path, backup)
 
-    print("Backup creado:", backup)
+def build_target_yaml(entity_type: str, title: str, slug: str, current: Dict[str, Any]) -> Dict[str, Any]:
+    criticidad = current.get("criticidad", "media")
 
-    new_yaml = yaml.dump(yaml_data, allow_unicode=True, sort_keys=False)
+    if entity_type == "server":
+        return {
+            "id": f"srv_{slug}",
+            "tipo": "servidor",
+            "nombre": current.get("nombre", title),
+            "estado": current.get("estado", "productivo"),
+            "criticidad": criticidad,
+            "responsable": current.get("responsable", "infraestructura"),
+            "tags": current.get("tags", ["servidor"]),
+        }
 
-    front, body = split_frontmatter(content)
+    if entity_type == "incident":
+        return {
+            "id": f"inc_{slug}",
+            "tipo": "incidente",
+            "afecta": current.get("afecta", []),
+            "estado": current.get("estado", "cerrado"),
+            "criticidad": criticidad,
+            "tags": current.get("tags", ["incidente"]),
+        }
 
-    if front:
-        print("Frontmatter existente reemplazado")
-    else:
-        print("Frontmatter nuevo insertado")
+    return {
+        "id": f"svc_{slug}",
+        "tipo": "servicio",
+        "nombre": current.get("nombre", title),
+        "estado": current.get("estado", "productivo"),
+        "criticidad": criticidad,
+        "responsable": current.get("responsable", "aplicaciones"),
+        "corre_en": current.get("corre_en", []),
+        "depende_de": current.get("depende_de", []),
+        "seguridad": {
+            "autenticacion": current.get("seguridad", {}).get("autenticacion", False)
+            if isinstance(current.get("seguridad"), dict)
+            else False,
+            "cifrado": current.get("seguridad", {}).get("cifrado", False)
+            if isinstance(current.get("seguridad"), dict)
+            else False,
+            "acceso_externo": current.get("seguridad", {}).get("acceso_externo", False)
+            if isinstance(current.get("seguridad"), dict)
+            else False,
+        },
+        "tags": current.get("tags", []),
+    }
 
-    new_content = f"---\n{new_yaml}---\n{body.lstrip()}"
 
-    with open(note_path, "w", encoding="utf-8") as f:
+def render_frontmatter(data: Dict[str, Any], eol: str) -> str:
+    yaml_text = yaml.safe_dump(
+        data,
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+    )
+    yaml_text = yaml_text.replace("\n", eol)
+    return f"---{eol}{yaml_text}---{eol}"
+
+
+def process_markdown_file(md_path: str) -> bool:
+    with open(md_path, "r", encoding="utf-8", newline="") as f:
+        original = f.read()
+
+    eol = detect_eol(original)
+    current_frontmatter, body = parse_frontmatter(original)
+    current_frontmatter = current_frontmatter or {}
+
+    filename = os.path.splitext(os.path.basename(md_path))[0]
+    slug = slugify(filename)
+    entity_type = infer_entity_type(current_frontmatter, md_path)
+    target = build_target_yaml(entity_type, filename, slug, current_frontmatter)
+
+    new_content = f"{render_frontmatter(target, eol)}{body}"
+
+    if new_content == original:
+        return False
+
+    backup_path = f"{md_path}.bak"
+    shutil.copy2(md_path, backup_path)
+
+    with open(md_path, "w", encoding="utf-8", newline="") as f:
         f.write(new_content)
 
-    print("✔ Aplicado en:", note_path)
+    return True
 
 
-def execute_apply():
-
+def execute_apply() -> None:
     print("\n====================================")
-    print("APLICANDO YAML A LAS NOTAS")
+    print("MIGRACION YAML FRONTMATTER")
     print("====================================")
 
-    apps = load_yaml_folder(OUTPUT_APPS)
-    servers = load_yaml_folder(OUTPUT_SERVERS)
+    updated = 0
+    errors = []
 
-    all_items = {**apps, **servers}
+    for root, _, files in os.walk(VAULT_PATH):
+        for name in files:
+            if not name.lower().endswith(".md"):
+                continue
 
-    print("\nTotal entidades a aplicar:", len(all_items))
-
-    applied = 0
-    missing = []
-
-    for name, yaml_data in all_items.items():
-
-        print("\nProcesando:", name)
-
-        path = find_note_path(name)
-
-        if not path:
-            missing.append(name)
-            continue
-
-        apply_yaml_to_note(path, yaml_data)
-        applied += 1
+            file_path = os.path.join(root, name)
+            try:
+                changed = process_markdown_file(file_path)
+                if changed:
+                    updated += 1
+                    print(f"✔ Actualizado: {file_path}")
+            except Exception as exc:
+                errors.append((file_path, str(exc)))
+                print(f"❌ Error en {file_path}: {exc}")
 
     print("\n====================================")
-    print("RESULTADO FINAL")
+    print("RESULTADO")
     print("====================================")
+    print(f"Notas actualizadas: {updated}")
 
-    print("Notas actualizadas:", applied)
-
-    if missing:
-        print("\nNo encontradas:")
-        for m in missing:
-            print(" -", m)
+    if errors:
+        print("\nArchivos con error:")
+        for path, err in errors:
+            print(f" - {path}: {err}")
