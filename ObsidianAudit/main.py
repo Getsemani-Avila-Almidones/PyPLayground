@@ -16,21 +16,21 @@ def main():
 
     banner()
     # Ejecutar Reporte General
-    analyze_vault()
+    # analyze_vault()
 
     # Ejecutar Apps
-    run_apps()
+    # run_apps()
 
     # Ejecutar Servidores
-    run_servers()
+    # run_servers()
 
     # Aplicar YAML solo si se solicita
-    execute_apply()
+    # execute_apply()
     # if "--apply" in sys.argv:
     #     execute_apply()
 
     # Dashboard final
-    execute_dashboard()
+    # execute_dashboard()
 
     print("\n====================================")
     print("ANALISIS COMPLETADO")
