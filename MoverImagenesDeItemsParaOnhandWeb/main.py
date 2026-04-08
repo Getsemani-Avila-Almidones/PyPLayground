@@ -1,92 +1,113 @@
-import os
-import re
-import shutil
+#!/usr/bin/env python3
+"""
+ORQUESTADOR PRINCIPAL - Organización de Imágenes de Items
+
+Este script coordina todo el proceso de:
+1. Escanear carpetas de items con imágenes (omitiendo carpetas SEMANA)
+2. Mover las carpetas de items al directorio raíz
+3. Renombrar imágenes con el formato: <NumeroDeItem>.<extension>
+4. Eliminar duplicados
+
+Estructura final: Items/<NumeroDeItem>/<NumeroDeItem>.<extension>
+"""
+
+import sys
 from pathlib import Path
-
-# =========================
-# CONFIGURACIÓN
-# =========================
-ROOT_PATH = Path(r"C:\Users\21596\Documents\Dev\rptOnHandWeb\assets\items")  # cambia esto
-DRY_RUN = False
-
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".jfif", ".avif", ".svg"}
-
-# Ejemplo:
-# 120-005-003
-# N-120-005-003
-# A-120-005-003
-ITEM_PATTERN = re.compile(r"^(?:[A-Za-z]-)?[A-Za-z0-9]+-[A-Za-z0-9]+-[A-Za-z0-9]+$")
+from config import ROOT_PATH, DRY_RUN
+from modules.scanner import scan_item_folders, scan_semana_folders
+from modules.organizer import organize_all_items
+from modules.image_processor import process_all_images
 
 
-def is_image_file(path: Path) -> bool:
-    return path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+def print_header():
+    """Imprime el encabezado del programa."""
+    print("\n" + "="*60)
+    print("   ORGANIZADOR DE IMÁGENES DE ITEMS PARA ONHAND WEB")
+    print("="*60)
+    print(f"Directorio raíz: {ROOT_PATH}")
+    print(f"Modo: {'DRY-RUN (sin cambios reales)' if DRY_RUN else 'PRODUCCIÓN'}")
+    print("="*60)
 
 
-def is_item_folder(path: Path) -> bool:
-    return path.is_dir() and ITEM_PATTERN.match(path.name) is not None
+def print_summary(scan_stats, org_stats, img_stats):
+    """Imprime el resumen final de la ejecucion."""
+    print("\n" + "="*60)
+    print("   RESUMEN FINAL")
+    print("="*60)
+    print(f"\n[ESCANEO]")
+    print(f"   Items encontrados: {scan_stats['total_found']}")
+    print(f"   Items con imagenes: {scan_stats['with_images']}")
+    print(f"   Items sin imagenes: {scan_stats['without_images']}")
 
+    print(f"\n[ORGANIZACION]")
+    print(f"   Carpetas movidas: {org_stats['moved']}")
+    print(f"   Carpetas omitidas: {org_stats['skipped']}")
 
-def folder_contains_images(folder: Path) -> bool:
-    for root, _, files in os.walk(folder):
-        for file_name in files:
-            if is_image_file(Path(root) / file_name):
-                return True
-    return False
+    print(f"\n[PROCESAMIENTO DE IMAGENES]")
+    print(f"   Carpetas procesadas: {img_stats['folders_processed']}")
+    print(f"   Imagenes renombradas: {img_stats['images_renamed']}")
+    print(f"   Duplicados eliminados: {img_stats['duplicates_removed']}")
+    print(f"   Advertencias: {img_stats['warnings']}")
 
-
-def unique_destination_dir(root_path: Path, folder_name: str) -> Path:
-    """
-    Evita sobrescribir una carpeta existente con el mismo nombre.
-    """
-    target = root_path / folder_name
-    if not target.exists():
-        return target
-
-    counter = 1
-    while True:
-        candidate = root_path / f"{folder_name}_{counter}"
-        if not candidate.exists():
-            return candidate
-        counter += 1
-
-
-def move_item_folder_to_root(item_folder: Path, root_path: Path):
-    destination = unique_destination_dir(root_path, item_folder.name)
-
+    print("\n" + "="*60)
     if DRY_RUN:
-        print(f"[DRY-RUN] Mover carpeta: {item_folder} -> {destination}")
+        print("[!] MODO DRY-RUN: No se realizaron cambios reales")
     else:
-        shutil.move(str(item_folder), str(destination))
-        print(f"Movida carpeta: {item_folder} -> {destination}")
+        print("[OK] PROCESO COMPLETADO EXITOSAMENTE")
+    print("="*60 + "\n")
 
 
-def process_items(root_path: Path):
-    found = 0
-    moved = 0
+def main():
+    """Función principal que orquesta todo el proceso."""
 
-    # Capturamos primero los candidatos antes de mover, para no romper el recorrido
-    candidates = []
+    # Validar que el directorio raiz existe
+    if not ROOT_PATH.exists():
+        print(f"[ERROR] No existe el directorio raiz: {ROOT_PATH}")
+        sys.exit(1)
 
-    for dirpath, dirnames, _ in os.walk(root_path):
-        current_dir = Path(dirpath)
+    print_header()
 
-        if is_item_folder(current_dir):
-            found += 1
-            if folder_contains_images(current_dir):
-                candidates.append(current_dir)
+    # PASO 0: Escanear carpetas SEMANA (informativo)
+    print("\n" + "="*60)
+    print("PASO 0: ESCANEANDO CARPETAS SEMANA (informativo)")
+    print("="*60)
+    semana_folders, semana_stats = scan_semana_folders(ROOT_PATH)
+    print(f"[*] Carpetas SEMANA encontradas: {semana_stats['total']}")
+    print(f"    Con archivos: {semana_stats['with_files']}")
+    print(f"    Vacias: {semana_stats['empty']}")
 
-    for item_folder in candidates:
-        move_item_folder_to_root(item_folder, root_path)
-        moved += 1
+    # PASO 1: Escanear carpetas de items
+    print("\n" + "="*60)
+    print("ESCANEANDO CARPETAS DE ITEMS")
+    print("="*60)
+    item_folders, scan_stats = scan_item_folders(ROOT_PATH)
+    print(f"[*] Items encontrados: {scan_stats['total_found']}")
+    print(f"    Con imagenes: {scan_stats['with_images']}")
+    print(f"    Sin imagenes: {scan_stats['without_images']}")
 
-    print("\n====================")
-    print(f"Carpetas item encontradas: {found}")
-    print(f"Carpetas item movidas: {moved}")
-    print("====================")
+    if not item_folders:
+        print("\n[!] No se encontraron carpetas de items con imagenes.")
+        sys.exit(0)
+
+    # PASO 2: Organizar carpetas (mover al root)
+    org_stats = organize_all_items(item_folders, ROOT_PATH)
+
+    # PASO 3: Procesar imágenes (renombrar y eliminar duplicados)
+    # Pasamos las mismas carpetas que fueron escaneadas
+    img_stats = process_all_images(item_folders)
+
+    # RESUMEN FINAL
+    print_summary(scan_stats, org_stats, img_stats)
 
 
 if __name__ == "__main__":
-    if not ROOT_PATH.exists():
-        raise FileNotFoundError(f"No existe la ruta: {ROOT_PATH}")
-
-    process_items(ROOT_PATH)
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n[!] Proceso interrumpido por el usuario.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n\n[ERROR] Error inesperado: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
